@@ -383,6 +383,11 @@ class WebMscore {
      * @returns {Promise<import('../schemas').AudioOutputParamsSnapshot>}
      */
     async getAudioOutputParams() {
+        if (!WebMscore.hasSoundfont) {
+            // We need to init audio synthesis to access Audio params
+            throw new Error('The soundfont is not set.')
+        }
+
         const dataptr = Module.ccall('getAudioOutputParams',
             'number',
             ['number', 'number'],
@@ -399,6 +404,11 @@ class WebMscore {
      * @returns {Promise<void>}
      */
     async setAudioOutputParams(patch) {
+        if (!WebMscore.hasSoundfont) {
+            // We need to init audio synthesis to edit Audio params
+            throw new Error('The soundfont is not set.')
+        }
+
         const payloadPtr = getStrPtr(JSON.stringify(patch))
         const dataptr = Module.ccall('setAudioOutputParams',
             'number',
