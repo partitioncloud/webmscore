@@ -8,8 +8,8 @@
         "webmscore": "../web-public"
     },
     "scripts": {
-        "test": "node --test --test-concurrency=1 --test-force-exit \"test/*.test.js\"",
-        "test:ci": "node --test --test-concurrency=1 --test-force-exit --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit.xml \"test/*.test.js\"",
+        "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+        "test:ci": "node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit.xml \"test/*.test.js\"",
         "start": "node --experimental-modules --unhandled-rejections=strict example.js",
         "test-synth": "node --experimental-modules --unhandled-rejections=strict test_synth.js",
         "start:browser": "npx http-server . -o -c-1",
