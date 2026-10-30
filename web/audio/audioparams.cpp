@@ -30,8 +30,7 @@ static Ret patchOutputParamsFromJson(const QJsonObject& patch, audio::AudioOutpu
 
         const QJsonValue value = patch.value(key);
         if (!value.isDouble()) {
-            LOGE() << "Invalid type for '" << key.toString() << "': number expected";
-            return make_ret(Ret::Code::InternalError);
+            return make_ret(Ret::Code::UnknownError, "Invalid type for '" + key.toString().toStdString() + "': number expected");
         }
         target = static_cast<float>(value.toDouble());
         return make_ok();
@@ -43,18 +42,23 @@ static Ret patchOutputParamsFromJson(const QJsonObject& patch, audio::AudioOutpu
 
         const QJsonValue value = patch.value(key);
         if (!value.isBool()) {
-            LOGE() << "Invalid type for '" << key.toString() << "': boolean expected";
-            return make_ret(Ret::Code::InternalError);
+            return make_ret(Ret::Code::UnknownError, "Invalid type for '" + key.toString().toStdString() + "': boolean expected");
         }
         target = value.toBool();
         return make_ok();
     };
 
-    applyDouble(QStringLiteral("volume"), params.volume);
-    applyDouble(QStringLiteral("balance"), params.balance);
-    applyBool(QStringLiteral("solo"), params.solo);
-    applyBool(QStringLiteral("muted"), params.muted);
-    applyBool(QStringLiteral("forceMute"), params.forceMute);
+    for (const Ret& ret : {
+        applyDouble(QStringLiteral("volume"), params.volume),
+        applyDouble(QStringLiteral("balance"), params.balance),
+        applyBool(QStringLiteral("solo"), params.solo),
+        applyBool(QStringLiteral("muted"), params.muted),
+        applyBool(QStringLiteral("forceMute"), params.forceMute),
+    }) {
+        if (!ret) {
+            return ret;
+        }
+    }
 
     return make_ok();
 }

@@ -51,8 +51,10 @@ describe('audio output params', () => {
         await assert.rejects(score.setAudioOutputParams({ tracks: [{ trackId: 999, volume: 3 }] }))
     })
 
-    it('rejects a value of the wrong type', { todo: 'patchOutputParamsFromJson ignores type errors' }, async () => {
-        await assert.rejects(score.setAudioOutputParams({ master: { volume: '-6' } }))
+    it('rejects a value of the wrong type', async () => {
+        await assert.rejects(score.setAudioOutputParams({ master: { volume: '-6' } }), /'volume': number expected/)
+        await assert.rejects(score.setAudioOutputParams({ master: { muted: 1 } }), /'muted': boolean expected/)
+        assert.equal((await score.getAudioOutputParams()).master.volume, 0)
     })
 
     it('round-trips a track patch', { todo: 'track params read back stale values right after a set' }, async () => {
