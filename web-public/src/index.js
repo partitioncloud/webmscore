@@ -578,8 +578,8 @@ class WebMscore {
             throw new Error('unimplemented')
         }
 
+        // the C++ side deletes the score (with its EngravingProject), it must not be freed again
         Module.ccall('destroy', 'void', ['number'], [this.scoreptr])
-        freePtr(this.scoreptr)
     }
 
 }
