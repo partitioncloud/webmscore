@@ -28,7 +28,6 @@ const MAGIC = {
 }
 
 describe('saveAudio', () => {
-    // at most 3 scores in this process, see audio-synth.test.js
     let score, duration
     before(async () => {
         score = await loadScore(SCORE)

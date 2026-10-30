@@ -132,8 +132,7 @@ Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
   starts passing, drop the `todo`
 * audio bugs that shape the tests: audio calls act on the *last loaded* score, whatever
   score they are called on; `saveAudio` only works once per instance (so formats are exported
-  in child processes, `test/support/save-audio.js`); audio calls on the 4th score loaded in an
-  instance throw then crash — keep at most 3 scores per audio test file
+  in child processes, `test/support/save-audio.js`)
 
 ## webmscore-specific switches
 

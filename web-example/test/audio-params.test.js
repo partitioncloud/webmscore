@@ -2,8 +2,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { AEQUALE, loadScore, setSoundFont, synth, approxEqual } from './helpers.js'
 
-// at most 3 scores per file, see audio-synth.test.js
-
 const dB = (db) => 10 ** (db / 20)
 
 describe('audio output params', () => {

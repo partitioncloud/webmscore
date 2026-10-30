@@ -2,9 +2,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { AEQUALE, loadScore, setSoundFont, synth, approxEqual } from './helpers.js'
 
-// Known bug: the audio engine only works for the first 3 scores loaded in a wasm instance,
-// so each audio test file loads at most 3 scores (see the last test).
-
 const CHUNK_FRAMES = 512
 const SAMPLE_RATE = 44100
 const CHUNK_BYTES = CHUNK_FRAMES * 2 /* channels */ * 4 /* float32 */
@@ -80,11 +77,13 @@ describe('synthAudio', () => {
         assert.ok(results.at(-1).endTime >= duration, `${results.at(-1).endTime}s vs ${duration}s`)
     })
 
-    // keep last: once it fails, the audio engine of the instance is broken
-    it('works for more than 3 scores', { todo: 'audio calls on the 4th score loaded in an instance throw, then crash' }, async () => {
-        const fourth = await loadScore(AEQUALE)
-        await fourth.getAudioOutputParams()
-        const { rms } = await synth(fourth, 1)
-        assert.ok(rms > 0)
+    it('works for many scores', async () => {
+        // used to crash on the 4th score: a destroyed `Player` received rpc responses
+        for (let i = 0; i < 4; i++) {
+            const other = await loadScore(AEQUALE)
+            assert.ok((await other.getAudioOutputParams()).tracks.length > 0)
+            const { rms } = await synth(other, 1)
+            assert.ok(rms > 0, `score ${i}`)
+        }
     })
 })

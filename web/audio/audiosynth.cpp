@@ -54,16 +54,21 @@ audio::TrackSequenceId Synth::getSequenceId() {
 
     static const int MAX_PUMPS = 64;
 
-    // The sequence is created asynchronously (`Playback::addSequence()` is a `Promise`)
+    // The sequence of the current notation is created asynchronously (`Playback::addSequence()`
+    // is a `Promise`), and so are its tracks: the controller allows playing once all are loaded
     audio::TrackSequenceId sequenceId = -1;
-    for (int i = 0; i < MAX_PUMPS; i++) {
+    for (int i = 0; i < MAX_PUMPS * 8; i++) {
         sequenceId = playbackController->currentTrackSequenceId();
-        if (sequenceId != -1 && muse::contains(enginePlayback->sequenceIdList(), sequenceId)) {
+        if (sequenceId != -1 && playbackController->isPlayAllowed()
+            && muse::contains(enginePlayback->sequenceIdList(), sequenceId)) {
             break;
         }
 
-        sequenceId = -1;
         pump();
+    }
+
+    if (sequenceId != -1 && !muse::contains(enginePlayback->sequenceIdList(), sequenceId)) {
+        sequenceId = -1;
     }
 
     if (sequenceId == -1) {
