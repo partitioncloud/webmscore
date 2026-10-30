@@ -130,8 +130,6 @@ Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
   so that tests survive upstream rebases
 * known bugs are `{ todo: '…' }` tests: reported, but they do not fail the run — when one
   starts passing, drop the `todo`
-* audio bugs that shape the tests: `saveAudio` only works once per instance (so formats are
-  exported in child processes, `test/support/save-audio.js`)
 
 ## webmscore-specific switches
 
@@ -162,6 +160,9 @@ Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
   of the global context's current notation. `makeCurrent()` (`web/main.cpp`) must run before any
   audio operation on a score; switching rebuilds the sequence from the project's audio settings,
   so params must be stored there (`web/audio/audioparams.cpp`), not only in the engine.
+* **rpc in single-thread mode**: main and engine share one dispatch table in
+  `GeneralRpcChannel`, so a message reaches the handlers of *both* sides. Responses must only be
+  matched by call id; a handler registered for a method must not assume which side sent it.
 * **No threads, no event loop.** Anything asynchronous (promises, `async::processMessages`,
   the audio RPC queue) only advances when webmscore pumps it explicitly — see
   `Synth::getSequenceId()` in `web/audio/audiosynth.cpp` and the wait loops in

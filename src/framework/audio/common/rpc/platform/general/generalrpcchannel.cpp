@@ -135,7 +135,10 @@ void GeneralRpcChannel::receive(RpcData& to, const Msg& m) const
     }
 
     // by method
-    {
+    //! NOTE Not for responses: they carry the method of their request. In single-thread mode
+    //! (webmscore) both sides share one dispatch table, so the request handler would get its own
+    //! response, handle it as a new request and respond again, forever
+    if (m.type != MsgType::Response) {
         auto it = to.onMethods.find(m.method);
         if (it != to.onMethods.end() && it->second) {
             it->second(m);
