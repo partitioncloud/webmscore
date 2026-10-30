@@ -71,7 +71,7 @@ describe('synthAudio', () => {
     })
 
     // the last loaded score is now repeat01.mscx (~8 s)
-    it('synthesizes its own score, not the last loaded one', { todo: 'web/audio ignores `score`, uses the current sequence' }, async () => {
+    it('synthesizes its own score, not the last loaded one', async () => {
         const { duration } = await score.metadata()
         const { results } = await synth(score, Infinity)
         assert.ok(results.at(-1).endTime >= duration, `${results.at(-1).endTime}s vs ${duration}s`)

@@ -71,13 +71,19 @@ describe('audio output params', () => {
         }
     })
 
-    // keep last: it loads another score, which takes over the audio of `score`
-    it('params are per score', { todo: 'audio params act on the last loaded score (web/audio ignores `score`)' }, async () => {
+    it('params are per score, and survive switching scores', async () => {
         const other = await loadScore('repeat01.mscx')
         await score.setAudioOutputParams({ master: { volume: -10 } })
         try {
-            assert.equal((await other.getAudioOutputParams()).master.volume, 0)
-            assert.ok((await score.getAudioOutputParams()).tracks.some(t => t.trackName === 'Tenor Trombone'))
+            const otherParams = await other.getAudioOutputParams()
+            assert.equal(otherParams.master.volume, 0)
+            assert.ok(otherParams.tracks.some(t => t.trackName === 'Piano'))
+
+            const params = await score.getAudioOutputParams()
+            assert.equal(params.master.volume, -10)
+            assert.ok(params.tracks.some(t => t.trackName === 'Tenor Trombone'))
+            const { rms } = await synth(score, 5)
+            assert.ok(approxEqual(rms / reference, dB(-10), 0.02), `ratio ${rms / reference}`)
         } finally {
             await score.setAudioOutputParams({ master: { volume: 0 } })
         }

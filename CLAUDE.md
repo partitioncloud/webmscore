@@ -130,9 +130,8 @@ Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
   so that tests survive upstream rebases
 * known bugs are `{ todo: '…' }` tests: reported, but they do not fail the run — when one
   starts passing, drop the `todo`
-* audio bugs that shape the tests: audio calls act on the *last loaded* score, whatever
-  score they are called on; `saveAudio` only works once per instance (so formats are exported
-  in child processes, `test/support/save-audio.js`)
+* audio bugs that shape the tests: `saveAudio` only works once per instance (so formats are
+  exported in child processes, `test/support/save-audio.js`)
 
 ## webmscore-specific switches
 
@@ -159,6 +158,10 @@ Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
   `web/build.release/webmscore.lib.js.symbols`: `grep -m1 "^<index>:" …lib.js.symbols`.
   `null function or function signature mismatch` almost always means a null pointer was
   dereferenced through a virtual call (usually a service webmscore does not register).
+* **The playback follows the *current* score.** The audio engine has a single sequence, the one
+  of the global context's current notation. `makeCurrent()` (`web/main.cpp`) must run before any
+  audio operation on a score; switching rebuilds the sequence from the project's audio settings,
+  so params must be stored there (`web/audio/audioparams.cpp`), not only in the engine.
 * **No threads, no event loop.** Anything asynchronous (promises, `async::processMessages`,
   the audio RPC queue) only advances when webmscore pumps it explicitly — see
   `Synth::getSequenceId()` in `web/audio/audiosynth.cpp` and the wait loops in

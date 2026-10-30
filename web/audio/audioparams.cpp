@@ -6,6 +6,9 @@
 #include <type_traits>
 
 #include "audio/engine/internal/engineplayback.h"
+#include "context/iglobalcontext.h"
+#include "playback/iplaybackcontroller.h"
+#include "project/inotationproject.h"
 
 #include "./audioparams.h"
 #include "./audiosynth.h"
@@ -65,6 +68,7 @@ static Ret patchOutputParamsFromJson(const QJsonObject& patch, audio::AudioOutpu
 
 namespace MainAudio {
 
+// `score` is the current score, see `makeCurrent()` in main.cpp
 Ret getOutputParams(MainScore score) {
     (void)score;
 
@@ -105,6 +109,41 @@ Ret getOutputParams(MainScore score) {
     return ret;
 }
 
+/**
+ * The playback controller rebuilds the sequence from the project's audio settings whenever the
+ * current score changes: store the params there too, not only in the engine.
+ * (The controller does it as well, but only once the engine's notification went through the rpc
+ * channel, which may be after the next score was made current.)
+ */
+static mu::project::IProjectAudioSettingsPtr currentAudioSettings() {
+    const auto globalContext = modularity::ioc()->resolve<mu::context::IGlobalContext>("");
+    const auto project = globalContext ? globalContext->currentProject() : nullptr;
+    return project ? project->audioSettings() : nullptr;
+}
+
+static void storeTrackOutputParams(audio::TrackId trackId, const audio::AudioOutputParams& params) {
+    const auto audioSettings = currentAudioSettings();
+    const auto playbackController = modularity::ioc()->resolve<mu::playback::IPlaybackController>("");
+    if (!audioSettings || !playbackController) {
+        return;
+    }
+
+    for (const auto& [instrumentTrackId, id] : playbackController->instrumentTrackIdMap()) {
+        if (id == trackId) {
+            audioSettings->setTrackOutputParams(instrumentTrackId, params);
+            return;
+        }
+    }
+
+    for (const auto& [auxIdx, id] : playbackController->auxTrackIdMap()) {
+        if (id == trackId) {
+            audioSettings->setAuxOutputParams(auxIdx, params);
+            return;
+        }
+    }
+}
+
+// `score` is the current score, see `makeCurrent()` in main.cpp
 Ret setOutputParams(MainScore score, const char* json) {
     (void)score;
 
@@ -140,6 +179,9 @@ Ret setOutputParams(MainScore score, const char* json) {
             return ret;
         }
         enginePlayback->setMasterOutputParams(masterParams);
+        if (const auto audioSettings = currentAudioSettings()) {
+            audioSettings->setMasterAudioOutputParams(masterParams);
+        }
     }
 
     if (payload.contains(QStringLiteral("tracks"))) {
@@ -173,6 +215,7 @@ Ret setOutputParams(MainScore score, const char* json) {
             }
 
             enginePlayback->setOutputParams(sequenceId, trackId, params);
+            storeTrackOutputParams(trackId, params);
         }
     }
 
