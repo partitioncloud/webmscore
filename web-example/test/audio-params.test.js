@@ -95,11 +95,15 @@ describe('audio output params', () => {
     })
 
     it('a change right after loading is kept', async () => {
-        const fresh = await loadScore('repeat01.mscx')
-        const { tracks } = await fresh.getAudioOutputParams()
-        const piano = tracks.find(t => t.trackName === 'Piano')
-        await fresh.setAudioOutputParams({ tracks: [{ trackId: piano.trackId, volume: -6 }] })
-        assert.equal((await fresh.getAudioOutputParams()).tracks.find(t => t.trackId === piano.trackId).volume, -6)
+        // the set must be the first audio call on the score: a get would first process the
+        // controller's pending updates, which used to override the set (track ids are the same
+        // for the same file)
+        const { tracks } = await score.getAudioOutputParams()
+        const tenor = tracks.find(t => t.trackName === 'Tenor Trombone')
+        const fresh = await loadScore(AEQUALE)
+        await fresh.setAudioOutputParams({ tracks: [{ trackId: tenor.trackId, volume: -6 }] })
+        const patched = (await fresh.getAudioOutputParams()).tracks.find(t => t.trackId === tenor.trackId)
+        assert.deepEqual({ trackName: patched.trackName, volume: patched.volume }, { trackName: 'Tenor Trombone', volume: -6 })
     })
 
     it('params are per score, and survive switching scores', async () => {
