@@ -112,12 +112,28 @@ Smoke test (needs Node; the JS shims assume a browser-ish environment):
 cp web/build.release/webmscore.lib.* web-public/
 cd web-public && npm run build:js-only
 cd ../web-example && rm -rf node_modules/webmscore4 && npm i ../web-public --install-links
-npm start            # export MusicXML/SVG/PNG/PDF/MXL/MIDI/OGG/positions/metadata
-npm run test-synth   # audio engine: synthesis + per-track output params
+npm test             # the test suite (node:test, web-example/test/*.test.js), ~1 min
+npm start            # smoke test: export MusicXML/SVG/PNG/PDF/MXL/MIDI/OGG/positions/metadata
+npm run test-synth   # smoke test: synthesis + per-track output params
 ```
 
-`npm start` covers rendering and file export; `test-synth` is the one that exercises the
-audio engine and the RPC plumbing — always run both.
+`npm test` is the check that matters after a rebase; the two smoke tests only fail on a crash
+(CI still runs them, for the exported files it uploads). Reinstall the package
+(`rm -rf node_modules/webmscore4 && npm i ...`) after each rebuild: a plain `npm i` keeps the
+old copy, since the version did not change.
+
+Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
+
+* each test file runs in its own process (= its own wasm instance), one file at a time;
+  state that leaks between tests (soundfont, current audio sequence) only leaks within a file
+* assert invariants (page counts, magic bytes, RMS, contiguity of measures…), not exact bytes,
+  so that tests survive upstream rebases
+* known bugs are `{ todo: '…' }` tests: reported, but they do not fail the run — when one
+  starts passing, drop the `todo`
+* audio bugs that shape the tests: audio calls act on the *last loaded* score, whatever
+  score they are called on; `saveAudio` only works once per instance (so formats are exported
+  in child processes, `test/support/save-audio.js`); audio calls on the 4th score loaded in an
+  instance throw then crash — keep at most 3 scores per audio test file
 
 ## webmscore-specific switches
 
