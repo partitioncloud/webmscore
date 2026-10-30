@@ -27,8 +27,6 @@ export const SOUNDFONT = path.join(repoRoot, 'share/sound/FluidR3Mono_GM.sf3')
 
 /** The soundfont is global to the wasm instance, set it once per process */
 export async function setSoundFont() {
-    // `WebMscore.setSoundFont` needs the runtime, but does not wait for it
-    await WebMscore.ready
     if (!WebMscore.hasSoundfont) {
         await WebMscore.setSoundFont(fs.readFileSync(SOUNDFONT))
     }

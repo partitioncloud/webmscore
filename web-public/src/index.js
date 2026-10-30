@@ -171,6 +171,9 @@ class WebMscore {
      * @returns {Promise<void>}
      */
     static async setSoundFont(data) {
+        // the virtual file system is only available once the runtime is initialized
+        await WebMscore.ready
+
         if (WebMscore.hasSoundfont) {
             // remove the old soundfont file
             Module['FS_unlink']('/MS Basic.sf3')
