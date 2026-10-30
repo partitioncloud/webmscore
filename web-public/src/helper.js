@@ -201,10 +201,13 @@ export const freePtr = (bufPtr) => {
 /**
  * this promise is resolved when the runtime is fully initialized
  */
+export let isRuntimeInitialized = false
+
 export const RuntimeInitialized = new Promise((resolve) => {
     ModulePromise.then((_Module) => {
         Module = _Module
         Module.ccall('init')  // init libmscore
+        isRuntimeInitialized = true
         resolve(undefined)
     })
 })

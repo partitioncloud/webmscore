@@ -4,6 +4,7 @@
 import {
     Module,
     RuntimeInitialized,
+    isRuntimeInitialized,
     getStrPtr,
     getTypedArrayPtr,
     WasmRes,
@@ -172,7 +173,10 @@ class WebMscore {
      */
     static async setSoundFont(data) {
         // the virtual file system is only available once the runtime is initialized
-        await WebMscore.ready
+        // (no `await` otherwise: `hasSoundfont` must be set synchronously, like before)
+        if (!isRuntimeInitialized) {
+            await WebMscore.ready
+        }
 
         if (WebMscore.hasSoundfont) {
             // remove the old soundfont file

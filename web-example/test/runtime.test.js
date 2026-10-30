@@ -10,4 +10,5 @@ describe('before the runtime is ready', () => {
         await WebMscore.setSoundFont(fs.readFileSync(SOUNDFONT))
         assert.ok(WebMscore.hasSoundfont)
     })
+
 })
