@@ -247,10 +247,20 @@ export interface SynthRes {
 }
 
 export interface AudioOutputParams {
+    /** in dB */
     volume: number;
+    /** -1 (left) to 1 (right) */
     balance: number;
     solo: boolean;
+    /**
+     * For instrument tracks, `true` as well when the track is force-muted (another track is solo).
+     * Patching it sets the track's own mute state.
+     */
     muted: boolean;
+    /**
+     * Instrument and aux tracks: read-only, computed from the solo states of the other tracks
+     * (a patched value is overridden).
+     */
     forceMute: boolean;
 }
 

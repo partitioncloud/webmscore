@@ -7,6 +7,8 @@
 
 #include "audio/engine/internal/engineplayback.h"
 #include "context/iglobalcontext.h"
+#include "notation/imasternotation.h"
+#include "notation/inotationsolomutestate.h"
 #include "playback/iplaybackcontroller.h"
 #include "project/inotationproject.h"
 
@@ -109,37 +111,80 @@ Ret getOutputParams(MainScore score) {
     return ret;
 }
 
-/**
- * The playback controller rebuilds the sequence from the project's audio settings whenever the
- * current score changes: store the params there too, not only in the engine.
- * (The controller does it as well, but only once the engine's notification went through the rpc
- * channel, which may be after the next score was made current.)
- */
 static mu::project::IProjectAudioSettingsPtr currentAudioSettings() {
     const auto globalContext = modularity::ioc()->resolve<mu::context::IGlobalContext>("");
     const auto project = globalContext ? globalContext->currentProject() : nullptr;
     return project ? project->audioSettings() : nullptr;
 }
 
-static void storeTrackOutputParams(audio::TrackId trackId, const audio::AudioOutputParams& params) {
-    const auto audioSettings = currentAudioSettings();
+/**
+ * Apply patched params to a track the way the playback controller expects, otherwise the
+ * controller overrides them (`updateSoloMuteStates()`, possibly with rpc messages still queued):
+ * - volume/balance are stored in the project's audio settings, which the controller reads (also
+ *   to rebuild the sequence when the current score changes);
+ * - solo/mute of instrument and aux tracks are solo/mute *states*, from which the controller
+ *   computes `muted`/`forceMute` of every track (a solo force-mutes the others).
+ *   Only the keys present in the patch change them: a read `muted` includes `forceMute`.
+ * The metronome is not managed by the controller: it is only set in the engine.
+ */
+static void applyTrackOutputParams(audio::TrackSequenceId sequenceId, audio::TrackId trackId,
+                                   const audio::AudioOutputParams& params, const QJsonObject& patch) {
+    using SoloMuteState = mu::notation::INotationSoloMuteState::SoloMuteState;
+
+    const auto enginePlayback = modularity::ioc()->resolve<audio::engine::IEnginePlayback>("");
     const auto playbackController = modularity::ioc()->resolve<mu::playback::IPlaybackController>("");
-    if (!audioSettings || !playbackController) {
+    const auto globalContext = modularity::ioc()->resolve<mu::context::IGlobalContext>("");
+    const auto audioSettings = currentAudioSettings();
+    const auto masterNotation = globalContext ? globalContext->currentMasterNotation() : nullptr;
+
+    // applied right away; the controller pushes the same values later on
+    enginePlayback->setOutputParams(sequenceId, trackId, params);
+    if (!audioSettings || !playbackController || !masterNotation) {
         return;
     }
 
+    const auto patchedState = [&patch](SoloMuteState state) {
+        if (patch.contains(QStringLiteral("muted"))) {
+            state.mute = patch.value(QStringLiteral("muted")).toBool();
+        }
+        if (patch.contains(QStringLiteral("solo"))) {
+            state.solo = patch.value(QStringLiteral("solo")).toBool();
+        }
+        return state;
+    };
+
     for (const auto& [instrumentTrackId, id] : playbackController->instrumentTrackIdMap()) {
-        if (id == trackId) {
-            audioSettings->setTrackOutputParams(instrumentTrackId, params);
+        if (id != trackId) {
+            continue;
+        }
+        if (instrumentTrackId == masterNotation->playback()->metronomeTrackId()) {
             return;
         }
+
+        audio::AudioOutputParams stored = audioSettings->trackOutputParams(instrumentTrackId);
+        stored.volume = params.volume;
+        stored.balance = params.balance;
+        audioSettings->setTrackOutputParams(instrumentTrackId, stored);
+
+        // triggers `updateSoloMuteStates()`
+        playbackController->setTrackSoloMuteState(instrumentTrackId,
+                                                  patchedState(playbackController->trackSoloMuteState(instrumentTrackId)));
+        return;
     }
 
     for (const auto& [auxIdx, id] : playbackController->auxTrackIdMap()) {
-        if (id == trackId) {
-            audioSettings->setAuxOutputParams(auxIdx, params);
-            return;
+        if (id != trackId) {
+            continue;
         }
+
+        audio::AudioOutputParams stored = audioSettings->auxOutputParams(auxIdx);
+        stored.volume = params.volume;
+        stored.balance = params.balance;
+        audioSettings->setAuxOutputParams(auxIdx, stored);
+
+        // triggers `updateSoloMuteStates()`
+        audioSettings->setAuxSoloMuteState(auxIdx, patchedState(audioSettings->auxSoloMuteState(auxIdx)));
+        return;
     }
 }
 
@@ -214,9 +259,11 @@ Ret setOutputParams(MainScore score, const char* json) {
                 return ret;
             }
 
-            enginePlayback->setOutputParams(sequenceId, trackId, params);
-            storeTrackOutputParams(trackId, params);
+            applyTrackOutputParams(sequenceId, trackId, params, trackPatch);
         }
+
+        // let the controller's updates reach the engine, so that the params read back are the new ones
+        Synth::pump(16);
     }
 
     return make_ok();

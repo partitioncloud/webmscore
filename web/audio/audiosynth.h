@@ -42,6 +42,9 @@ public:
      */
     static muse::audio::TrackSequenceId getSequenceId();
 
+    /// Process the pending promises and rpc messages (`times` rounds)
+    static void pump(int times = 1);
+
     /**
      * synthesize audio frames
      * @param starttime The start time offset in seconds

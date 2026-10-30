@@ -40,17 +40,19 @@ const char* Synth::processBatch(int batchSize, bool cancel) {
     return reinterpret_cast<const char*>(resArr);
 }
 
-audio::TrackSequenceId Synth::getSequenceId() {
-    auto playbackController = modularity::ioc()->resolve<playback::IPlaybackController>("");
-    auto rpcChannel = modularity::ioc()->resolve<audio::rpc::IRpcChannel>("");
-    auto enginePlayback = modularity::ioc()->resolve<audio::engine::IEnginePlayback>("");
-
+void Synth::pump(int times) {
     // NOTE The engine runs in-process, but it is still driven by the rpc queue and by
     // promises, so both need to be pumped until the engine caught up
-    auto pump = [rpcChannel]() {
+    auto rpcChannel = modularity::ioc()->resolve<audio::rpc::IRpcChannel>("");
+    for (int i = 0; i < times; i++) {
         async::processMessages();
         rpcChannel->process();
-    };
+    }
+}
+
+audio::TrackSequenceId Synth::getSequenceId() {
+    auto playbackController = modularity::ioc()->resolve<playback::IPlaybackController>("");
+    auto enginePlayback = modularity::ioc()->resolve<audio::engine::IEnginePlayback>("");
 
     static const int MAX_PUMPS = 64;
 

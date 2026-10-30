@@ -45,6 +45,29 @@ describe('audio output params', () => {
         }
     })
 
+    it('solo force-mutes the other instruments', async () => {
+        const { tracks } = await score.getAudioOutputParams()
+        const tenor = tracks.find(t => t.trackName === 'Tenor Trombone')
+        const others = tracks.filter(t => /Trombone/.test(t.trackName) && t.trackId !== tenor.trackId)
+        await score.setAudioOutputParams({ tracks: [{ trackId: tenor.trackId, solo: true }] })
+        try {
+            const params = await score.getAudioOutputParams()
+            for (const other of others) {
+                const p = params.tracks.find(t => t.trackId === other.trackId)
+                assert.deepEqual({ muted: p.muted, forceMute: p.forceMute }, { muted: true, forceMute: true }, other.trackName)
+            }
+            const { rms } = await synth(score, 5)
+            assert.ok(rms < reference * 0.8 && rms > reference * 0.05, `rms ${rms} vs ${reference}`)
+        } finally {
+            await score.setAudioOutputParams({ tracks: [{ trackId: tenor.trackId, solo: false }] })
+        }
+        // lifting the solo un-mutes the others
+        const params = await score.getAudioOutputParams()
+        for (const other of others) {
+            assert.equal(params.tracks.find(t => t.trackId === other.trackId).muted, false, other.trackName)
+        }
+    })
+
     it('rejects an unknown track', async () => {
         await assert.rejects(score.setAudioOutputParams({ tracks: [{ trackId: 999, volume: 3 }] }))
     })
@@ -55,7 +78,7 @@ describe('audio output params', () => {
         assert.equal((await score.getAudioOutputParams()).master.volume, 0)
     })
 
-    it('round-trips a track patch', { todo: 'track params read back stale values right after a set' }, async () => {
+    it('round-trips a track patch', async () => {
         const { tracks } = await score.getAudioOutputParams()
         const track = tracks.find(t => t.trackName === 'Tenor Trombone')
         await score.setAudioOutputParams({ tracks: [{ trackId: track.trackId, volume: -6 }] })
@@ -69,6 +92,14 @@ describe('audio output params', () => {
         } finally {
             await score.setAudioOutputParams({ tracks: [{ trackId: track.trackId, volume: 0, solo: false }] })
         }
+    })
+
+    it('a change right after loading is kept', async () => {
+        const fresh = await loadScore('repeat01.mscx')
+        const { tracks } = await fresh.getAudioOutputParams()
+        const piano = tracks.find(t => t.trackName === 'Piano')
+        await fresh.setAudioOutputParams({ tracks: [{ trackId: piano.trackId, volume: -6 }] })
+        assert.equal((await fresh.getAudioOutputParams()).tracks.find(t => t.trackId === piano.trackId).volume, -6)
     })
 
     it('params are per score, and survive switching scores', async () => {
