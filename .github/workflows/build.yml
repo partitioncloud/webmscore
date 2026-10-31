@@ -143,16 +143,32 @@ jobs:
         with:
           name: npm-pack
           path: web-example
-      - name: Test
-        id: run-test
+      - name: Install
         run: |
           cd web-example
           npm i
           npm i ./webmscore4-*.tgz
+      - name: Test
+        run: |
+          cd web-example
+          npm run test:ci
+      - name: Smoke test
+        # also produces the exported files uploaded below
+        id: run-test
+        if: ${{ !cancelled() }}
+        run: |
+          cd web-example
           npm start || echo "failed=1" >> "$GITHUB_OUTPUT"
           npm run test-synth || echo "failed=1" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: test-results
+          path: web-example/junit.xml
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: example-exports
           path: web-example/exported*

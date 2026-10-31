@@ -198,6 +198,19 @@ npm start  # Node.js example
 npm run start:browser  # browser example
 ```
 
+## Tests
+
+The test suite (Node.js ≥ 22) runs against the package installed in `web-example`:
+
+```sh
+cd ./web-example
+npm i ../web-public --install-links
+npm test
+```
+
+Tests live in [web-example/test](./web-example/test), one file per area (loading, exports, positions,
+metadata, audio). Known bugs are kept as `todo` tests: they are reported but do not fail the run.
+
 ## Debugging
 
 See [How to look up function names in the .symbols file?](https://github.com/LibreScore/webmscore/blob/web/CHANGELOG.md#0192---2021-01-25)

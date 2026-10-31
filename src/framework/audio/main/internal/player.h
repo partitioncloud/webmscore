@@ -23,6 +23,8 @@
 #ifndef MUSE_AUDIO_PLAYER_H
 #define MUSE_AUDIO_PLAYER_H
 
+#include <memory>
+
 #include "../iplayer.h"
 
 #include "global/async/asyncable.h"
@@ -63,6 +65,10 @@ public:
 private:
 
     TrackSequenceId m_sequenceId = -1;
+
+    //! NOTE The responses to the requests sent in `init()` can arrive after the player is destroyed
+    //! (e.g. when the current notation changes before the rpc channel is processed)
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
     PlaybackStatus m_playbackStatus = PlaybackStatus::Stopped;
     async::Channel<PlaybackStatus> m_playbackStatusChanged;
 

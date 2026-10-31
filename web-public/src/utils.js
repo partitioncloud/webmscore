@@ -22,15 +22,23 @@ export const shimDom = () => {
     }
 
     const globalthis = getGlobalThis()
+
+    // Qt keeps a timer armed (~10 s, re-armed when it fires): in Node.js, it must not keep
+    // the process alive once the user's work is done
+    const unref = (timer) => {
+        if (timer && typeof timer.unref === 'function') timer.unref()
+        return timer
+    }
+
     globalthis.window = globalthis.window || {
         addEventListener() { },
         removeEventListener() { },
         location: new URL("file:///"),
         encodeURIComponent,
         // Qt (its wasm event dispatcher) schedules its timers on `window`
-        setTimeout: (...args) => globalthis.setTimeout(...args),
+        setTimeout: (...args) => unref(globalthis.setTimeout(...args)),
         clearTimeout: (...args) => globalthis.clearTimeout(...args),
-        setInterval: (...args) => globalthis.setInterval(...args),
+        setInterval: (...args) => unref(globalthis.setInterval(...args)),
         clearInterval: (...args) => globalthis.clearInterval(...args),
         queueMicrotask: (...args) => globalthis.queueMicrotask(...args),
     }

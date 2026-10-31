@@ -112,12 +112,24 @@ Smoke test (needs Node; the JS shims assume a browser-ish environment):
 cp web/build.release/webmscore.lib.* web-public/
 cd web-public && npm run build:js-only
 cd ../web-example && rm -rf node_modules/webmscore4 && npm i ../web-public --install-links
-npm start            # export MusicXML/SVG/PNG/PDF/MXL/MIDI/OGG/positions/metadata
-npm run test-synth   # audio engine: synthesis + per-track output params
+npm test             # the test suite (node:test, web-example/test/*.test.js), ~1 min
+npm start            # smoke test: export MusicXML/SVG/PNG/PDF/MXL/MIDI/OGG/positions/metadata
+npm run test-synth   # smoke test: synthesis + per-track output params
 ```
 
-`npm start` covers rendering and file export; `test-synth` is the one that exercises the
-audio engine and the RPC plumbing — always run both.
+`npm test` is the check that matters after a rebase; the two smoke tests only fail on a crash
+(CI still runs them, for the exported files it uploads). Reinstall the package
+(`rm -rf node_modules/webmscore4 && npm i ...`) after each rebuild: a plain `npm i` keeps the
+old copy, since the version did not change.
+
+Writing tests (`web-example/test/helpers.js` has the shared loaders/parsers):
+
+* each test file runs in its own process (= its own wasm instance), one file at a time;
+  state that leaks between tests (soundfont, current audio sequence) only leaks within a file
+* assert invariants (page counts, magic bytes, RMS, contiguity of measures…), not exact bytes,
+  so that tests survive upstream rebases
+* known bugs are `{ todo: '…' }` tests: reported, but they do not fail the run — when one
+  starts passing, drop the `todo`
 
 ## webmscore-specific switches
 
@@ -144,6 +156,13 @@ audio engine and the RPC plumbing — always run both.
   `web/build.release/webmscore.lib.js.symbols`: `grep -m1 "^<index>:" …lib.js.symbols`.
   `null function or function signature mismatch` almost always means a null pointer was
   dereferenced through a virtual call (usually a service webmscore does not register).
+* **The playback follows the *current* score.** The audio engine has a single sequence, the one
+  of the global context's current notation. `makeCurrent()` (`web/main.cpp`) must run before any
+  audio operation on a score; switching rebuilds the sequence from the project's audio settings,
+  so params must be stored there (`web/audio/audioparams.cpp`), not only in the engine.
+* **rpc in single-thread mode**: main and engine share one dispatch table in
+  `GeneralRpcChannel`, so a message reaches the handlers of *both* sides. Responses must only be
+  matched by call id; a handler registered for a method must not assume which side sent it.
 * **No threads, no event loop.** Anything asynchronous (promises, `async::processMessages`,
   the audio RPC queue) only advances when webmscore pumps it explicitly — see
   `Synth::getSequenceId()` in `web/audio/audiosynth.cpp` and the wait loops in

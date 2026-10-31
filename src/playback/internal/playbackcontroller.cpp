@@ -1717,17 +1717,17 @@ void PlaybackController::setNotation(notation::INotationPtr notation)
         return;
     }
 
-#ifndef __EMSCRIPTEN__
     if (m_notation) {
+#ifndef __EMSCRIPTEN__
         INotationPartsPtr notationParts = m_notation->parts();
         NotifyList<const Part*> partList = notationParts->partList();
         partList.disconnect(this);
 
         m_notation->interaction()->selectionChanged().disconnect(this);
         m_notation->interaction()->textEditingEnded().disconnect(this);
+#endif
         m_notation->soloMuteState()->trackSoloMuteStateChanged().disconnect(this);
     }
-#endif
 
     m_notation = notation;
 
@@ -1767,12 +1767,13 @@ void PlaybackController::setNotation(notation::INotationPtr notation)
             playElements({ text });
         }
     });
+#endif
 
+    // webmscore: the solo/mute states are set through `setTrackSoloMuteState()` (audio output params)
     m_notation->soloMuteState()->trackSoloMuteStateChanged().onReceive(
         this, [this](const InstrumentTrackId&, const notation::INotationSoloMuteState::SoloMuteState&) {
         updateSoloMuteStates();
     });
-#endif
 }
 
 void PlaybackController::setMasterNotation(notation::IMasterNotationPtr masterNotation)

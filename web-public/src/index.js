@@ -4,6 +4,7 @@
 import {
     Module,
     RuntimeInitialized,
+    isRuntimeInitialized,
     getStrPtr,
     getTypedArrayPtr,
     WasmRes,
@@ -171,6 +172,12 @@ class WebMscore {
      * @returns {Promise<void>}
      */
     static async setSoundFont(data) {
+        // the virtual file system is only available once the runtime is initialized
+        // (no `await` otherwise: `hasSoundfont` must be set synchronously, like before)
+        if (!isRuntimeInitialized) {
+            await WebMscore.ready
+        }
+
         if (WebMscore.hasSoundfont) {
             // remove the old soundfont file
             Module['FS_unlink']('/MS Basic.sf3')
@@ -578,8 +585,8 @@ class WebMscore {
             throw new Error('unimplemented')
         }
 
+        // the C++ side deletes the score (with its EngravingProject), it must not be freed again
         Module.ccall('destroy', 'void', ['number'], [this.scoreptr])
-        freePtr(this.scoreptr)
     }
 
 }

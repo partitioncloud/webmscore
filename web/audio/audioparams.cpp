@@ -6,6 +6,11 @@
 #include <type_traits>
 
 #include "audio/engine/internal/engineplayback.h"
+#include "context/iglobalcontext.h"
+#include "notation/imasternotation.h"
+#include "notation/inotationsolomutestate.h"
+#include "playback/iplaybackcontroller.h"
+#include "project/inotationproject.h"
 
 #include "./audioparams.h"
 #include "./audiosynth.h"
@@ -30,8 +35,7 @@ static Ret patchOutputParamsFromJson(const QJsonObject& patch, audio::AudioOutpu
 
         const QJsonValue value = patch.value(key);
         if (!value.isDouble()) {
-            LOGE() << "Invalid type for '" << key.toString() << "': number expected";
-            return make_ret(Ret::Code::InternalError);
+            return make_ret(Ret::Code::UnknownError, "Invalid type for '" + key.toString().toStdString() + "': number expected");
         }
         target = static_cast<float>(value.toDouble());
         return make_ok();
@@ -43,24 +47,30 @@ static Ret patchOutputParamsFromJson(const QJsonObject& patch, audio::AudioOutpu
 
         const QJsonValue value = patch.value(key);
         if (!value.isBool()) {
-            LOGE() << "Invalid type for '" << key.toString() << "': boolean expected";
-            return make_ret(Ret::Code::InternalError);
+            return make_ret(Ret::Code::UnknownError, "Invalid type for '" + key.toString().toStdString() + "': boolean expected");
         }
         target = value.toBool();
         return make_ok();
     };
 
-    applyDouble(QStringLiteral("volume"), params.volume);
-    applyDouble(QStringLiteral("balance"), params.balance);
-    applyBool(QStringLiteral("solo"), params.solo);
-    applyBool(QStringLiteral("muted"), params.muted);
-    applyBool(QStringLiteral("forceMute"), params.forceMute);
+    for (const Ret& ret : {
+        applyDouble(QStringLiteral("volume"), params.volume),
+        applyDouble(QStringLiteral("balance"), params.balance),
+        applyBool(QStringLiteral("solo"), params.solo),
+        applyBool(QStringLiteral("muted"), params.muted),
+        applyBool(QStringLiteral("forceMute"), params.forceMute),
+    }) {
+        if (!ret) {
+            return ret;
+        }
+    }
 
     return make_ok();
 }
 
 namespace MainAudio {
 
+// `score` is the current score, see `makeCurrent()` in main.cpp
 Ret getOutputParams(MainScore score) {
     (void)score;
 
@@ -101,6 +111,84 @@ Ret getOutputParams(MainScore score) {
     return ret;
 }
 
+static mu::project::IProjectAudioSettingsPtr currentAudioSettings() {
+    const auto globalContext = modularity::ioc()->resolve<mu::context::IGlobalContext>("");
+    const auto project = globalContext ? globalContext->currentProject() : nullptr;
+    return project ? project->audioSettings() : nullptr;
+}
+
+/**
+ * Apply patched params to a track the way the playback controller expects, otherwise the
+ * controller overrides them (`updateSoloMuteStates()`, possibly with rpc messages still queued):
+ * - volume/balance are stored in the project's audio settings, which the controller reads (also
+ *   to rebuild the sequence when the current score changes);
+ * - solo/mute of instrument and aux tracks are solo/mute *states*, from which the controller
+ *   computes `muted`/`forceMute` of every track (a solo force-mutes the others).
+ *   Only the keys present in the patch change them: a read `muted` includes `forceMute`.
+ * The metronome is not managed by the controller: it is only set in the engine.
+ */
+static void applyTrackOutputParams(audio::TrackSequenceId sequenceId, audio::TrackId trackId,
+                                   const audio::AudioOutputParams& params, const QJsonObject& patch) {
+    using SoloMuteState = mu::notation::INotationSoloMuteState::SoloMuteState;
+
+    const auto enginePlayback = modularity::ioc()->resolve<audio::engine::IEnginePlayback>("");
+    const auto playbackController = modularity::ioc()->resolve<mu::playback::IPlaybackController>("");
+    const auto globalContext = modularity::ioc()->resolve<mu::context::IGlobalContext>("");
+    const auto audioSettings = currentAudioSettings();
+    const auto masterNotation = globalContext ? globalContext->currentMasterNotation() : nullptr;
+
+    // applied right away; the controller pushes the same values later on
+    enginePlayback->setOutputParams(sequenceId, trackId, params);
+    if (!audioSettings || !playbackController || !masterNotation) {
+        return;
+    }
+
+    const auto patchedState = [&patch](SoloMuteState state) {
+        if (patch.contains(QStringLiteral("muted"))) {
+            state.mute = patch.value(QStringLiteral("muted")).toBool();
+        }
+        if (patch.contains(QStringLiteral("solo"))) {
+            state.solo = patch.value(QStringLiteral("solo")).toBool();
+        }
+        return state;
+    };
+
+    for (const auto& [instrumentTrackId, id] : playbackController->instrumentTrackIdMap()) {
+        if (id != trackId) {
+            continue;
+        }
+        if (instrumentTrackId == masterNotation->playback()->metronomeTrackId()) {
+            return;
+        }
+
+        audio::AudioOutputParams stored = audioSettings->trackOutputParams(instrumentTrackId);
+        stored.volume = params.volume;
+        stored.balance = params.balance;
+        audioSettings->setTrackOutputParams(instrumentTrackId, stored);
+
+        // triggers `updateSoloMuteStates()`
+        playbackController->setTrackSoloMuteState(instrumentTrackId,
+                                                  patchedState(playbackController->trackSoloMuteState(instrumentTrackId)));
+        return;
+    }
+
+    for (const auto& [auxIdx, id] : playbackController->auxTrackIdMap()) {
+        if (id != trackId) {
+            continue;
+        }
+
+        audio::AudioOutputParams stored = audioSettings->auxOutputParams(auxIdx);
+        stored.volume = params.volume;
+        stored.balance = params.balance;
+        audioSettings->setAuxOutputParams(auxIdx, stored);
+
+        // triggers `updateSoloMuteStates()`
+        audioSettings->setAuxSoloMuteState(auxIdx, patchedState(audioSettings->auxSoloMuteState(auxIdx)));
+        return;
+    }
+}
+
+// `score` is the current score, see `makeCurrent()` in main.cpp
 Ret setOutputParams(MainScore score, const char* json) {
     (void)score;
 
@@ -136,6 +224,9 @@ Ret setOutputParams(MainScore score, const char* json) {
             return ret;
         }
         enginePlayback->setMasterOutputParams(masterParams);
+        if (const auto audioSettings = currentAudioSettings()) {
+            audioSettings->setMasterAudioOutputParams(masterParams);
+        }
     }
 
     if (payload.contains(QStringLiteral("tracks"))) {
@@ -168,8 +259,11 @@ Ret setOutputParams(MainScore score, const char* json) {
                 return ret;
             }
 
-            enginePlayback->setOutputParams(sequenceId, trackId, params);
+            applyTrackOutputParams(sequenceId, trackId, params, trackPatch);
         }
+
+        // let the controller's updates reach the engine, so that the params read back are the new ones
+        Synth::pump(16);
     }
 
     return make_ok();

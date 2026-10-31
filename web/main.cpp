@@ -26,6 +26,7 @@
 #include "draw/ifontprovider.h"
 #include "engraving/dom/score.h"
 #include "project/internal/notationproject.h"
+#include "global/containers.h"
 #include "engraving/engravingproject.h"
 #include "engraving/compat/mscxcompat.h"
 #include "project/internal/notationreadersregister.h"
@@ -53,8 +54,29 @@ using project::INotationWriter;
 //! This used to be `mu::engraving::DPI` (which was 360 until MuseScore 4.7)
 static constexpr float PNG_DPI_RESOLUTION = 360.f;
 
-std::set<engraving::EngravingProjectPtr> instances;
 static auto s_globalContext = std::make_shared<context::GlobalContext>();
+
+using NotationProjectPtr = std::shared_ptr<project::NotationProject>;
+
+//! The loaded scores. The `NotationProject` owns the `EngravingProject` (which owns the
+//! `MasterScore`) and the `MasterNotation` the playback and the audio writers need.
+static std::map<engraving::MasterScore*, NotationProjectPtr> s_projects;
+
+static NotationProjectPtr projectOf(engraving::MasterScore* score) {
+    return muse::value(s_projects, score->masterScore());
+}
+
+/**
+ * The playback (the audio engine sequence) follows the current notation of the global context:
+ * make `score` the current one before any audio operation.
+ * Switching rebuilds the sequence, its output params come from the project's audio settings.
+ */
+static void makeCurrent(engraving::MasterScore* score) {
+    NotationProjectPtr proj = projectOf(score);
+    if (proj && s_globalContext->currentProject() != proj) {
+        s_globalContext->setCurrentProject(proj);
+    }
+}
 
 static void loadFonts();
 
@@ -300,9 +322,7 @@ WasmRes _load(const char* format, const char* data, const uint32_t size, bool do
     notationProj->setupProject();
     notationProj->setPath(filePath);
 
-    // save smart pointer to keep the object alive
     auto proj = notationProj->m_engravingProject;
-    instances.insert(proj);
     // // `MasterScore::name()` requires a `FileInfoProvider` to get the file name, etc.
     // proj->setFileInfoProvider(std::make_shared<engraving::LocalFileInfoProvider>(filePath));
     
@@ -318,6 +338,7 @@ WasmRes _load(const char* format, const char* data, const uint32_t size, bool do
 
     engraving::MasterScore* score = proj->masterScore();
     notationProj->m_masterNotation->setMasterScore(score);
+    s_projects[score] = notationProj;
 
     // Set project only after master score is attached
     s_globalContext->setCurrentProject(notationProj);
@@ -391,7 +412,11 @@ Ret processWriter(String writerName, engraving::MasterScore * score, io::IODevic
 
     // FIXME: persist this `Notation` object
     // NOTE The master notation is needed by the writers that use the playback (audio export)
-    auto masterNotation = std::dynamic_pointer_cast<notation::MasterNotation>(s_globalContext->currentMasterNotation());
+    NotationProjectPtr proj = projectOf(score);
+    if (!proj) {
+        return make_ret(Ret::Code::InternalError);
+    }
+    auto masterNotation = std::dynamic_pointer_cast<notation::MasterNotation>(proj->masterNotation());
     auto notation = std::make_shared<notation::Notation>(masterNotation.get(), modularity::ContextPtr(), score);
 
     // Write
@@ -610,6 +635,8 @@ WasmRes _saveAudio(uintptr_t score_ptr, const char* format, int excerptId) {
         tempfile.remove();
     };
 
+    makeCurrent(score);
+
     io::File outputFile(filePath.toStdString());
     if (!outputFile.open(io::IODevice::WriteOnly)) {
         return WasmRes::fromRet(make_ret(Ret::Code::InternalError));
@@ -749,18 +776,21 @@ extern "C" {
     EMSCRIPTEN_KEEPALIVE
     WasmResBytes getAudioOutputParams(uintptr_t score_ptr, int excerptId = -1) {
         MainScore score(score_ptr, excerptId);
+        makeCurrent(score);
         return WasmRes::fromRet(MainAudio::getOutputParams(score));
     }
 
     EMSCRIPTEN_KEEPALIVE
     WasmResBytes setAudioOutputParams(uintptr_t score_ptr, const char* json, int excerptId = -1) {
         MainScore score(score_ptr, excerptId);
+        makeCurrent(score);
         return WasmRes::fromRet(MainAudio::setOutputParams(score, json));
     }
 
     EMSCRIPTEN_KEEPALIVE
     uintptr_t synthAudio(uintptr_t score_ptr, float starttime, int excerptId = -1) {
         MainScore score(score_ptr, excerptId);
+        makeCurrent(score);
         return MainAudio::Synth::start(score, starttime);
     };
 
@@ -786,10 +816,14 @@ extern "C" {
 
     EMSCRIPTEN_KEEPALIVE
     void destroy(uintptr_t score_ptr) {
-        // remove the only alive reference to the smart pointer
-        engraving::EngravingProjectPtr a = ((engraving::MasterScore*)score_ptr)->project().lock();
-        instances.erase(a);
+        auto score = reinterpret_cast<engraving::MasterScore*>(score_ptr);
+        NotationProjectPtr proj = projectOf(score);
+        if (proj && s_globalContext->currentProject() == proj) {
+            s_globalContext->setCurrentProject(nullptr);
+        }
+        // remove the only alive reference to the smart pointer:
         // destroying the `EngravingProject` also destroys its `MasterScore` in its destructor
+        s_projects.erase(score);
     };
 
 }
